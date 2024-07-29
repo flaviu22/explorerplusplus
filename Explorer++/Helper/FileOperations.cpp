@@ -15,6 +15,8 @@
 #include <list>
 #include <sstream>
 
+#include <atlbase.h>
+
 BOOL GetFileClusterSize(const std::wstring &strFilename, PLARGE_INTEGER lpRealFileSize);
 
 HRESULT FileOperations::RenameFile(IShellItem *item, const std::wstring &newName)
@@ -648,4 +650,125 @@ void FileOperations::DeleteFileSecurely(const std::wstring &strFilename,
 	CloseHandle(hFile);
 
 	DeleteFile(strFilename.c_str());
+}
+
+void FileOperations::ListRecycleItems()
+{
+	if (!SUCCEEDED(CoInitialize(nullptr)))
+		return;
+	{
+		CComPtr<IShellFolder> pDesktop, psf;
+		CComHeapPtr<ITEMIDLIST_ABSOLUTE> pidlBin;
+		do
+		{
+			auto hr = SHGetDesktopFolder(&pDesktop);
+			hr = SHGetKnownFolderIDList(FOLDERID_RecycleBinFolder, KF_FLAG_DEFAULT, NULL, &pidlBin);
+			if (!SUCCEEDED(hr))
+				break;
+			hr = pDesktop->BindToObject(pidlBin, nullptr, IID_PPV_ARGS(&psf));
+			if (!SUCCEEDED(hr))
+				break;
+			CComPtr<IEnumIDList> pEnumIdlist;
+			hr = psf->EnumObjects(NULL, SHCONTF_FOLDERS | SHCONTF_NONFOLDERS, &pEnumIdlist);
+			if (!SUCCEEDED(hr))
+				break;
+			ULONG cFetched{};
+			for (CComHeapPtr<ITEMID_CHILD> pidlChild;
+				 S_OK == pEnumIdlist->Next(1, &pidlChild, &cFetched); pidlChild.Free())
+			{
+				STRRET strnormal{}, strparsing{};
+				if (SUCCEEDED(psf->GetDisplayNameOf(pidlChild, SHGDN_NORMAL, &strnormal))
+					&& SUCCEEDED(psf->GetDisplayNameOf(pidlChild, SHGDN_FORPARSING, &strparsing)))
+				{
+					CComHeapPtr<WCHAR> pwszName, pwszParsing;
+					if (SUCCEEDED(StrRetToStrW(&strnormal, nullptr, &pwszName))
+						&& SUCCEEDED(StrRetToStrW(&strparsing, nullptr, &pwszParsing)))
+					{
+						std::wstring named{ pwszName };
+						OutputDebugString(named.c_str());
+						OutputDebugString(L"\n");
+						std::wstring parsed{ pwszParsing };
+						OutputDebugString(parsed.c_str());
+						OutputDebugString(L"\n");
+					}
+				}
+			}
+		} while (false);
+	}
+	CoUninitialize();
+}
+
+bool FileOperations::FindDeletedItem(const PCIDLIST_ABSOLUTE &pidl)
+{
+	if (!SUCCEEDED(CoInitialize(nullptr)))
+		return false;
+
+	bool found{ false };
+
+	{
+		CComPtr<IShellFolder> pDesktop, psf;
+		CComHeapPtr<ITEMIDLIST_ABSOLUTE> pidlBin;
+
+		do
+		{
+			auto hr = SHGetDesktopFolder(&pDesktop);
+			if (!SUCCEEDED(hr))
+				break;
+			hr = SHGetKnownFolderIDList(FOLDERID_RecycleBinFolder, KF_FLAG_DEFAULT, NULL, &pidlBin);
+			if (!SUCCEEDED(hr))
+				break;
+			hr = pDesktop->BindToObject(pidlBin, nullptr, IID_PPV_ARGS(&psf));
+			if (!SUCCEEDED(hr))
+				break;
+			CComPtr<IEnumIDList> pEnumIdlist;
+			hr = psf->EnumObjects(NULL, SHCONTF_FOLDERS | SHCONTF_NONFOLDERS, &pEnumIdlist);
+			if (!SUCCEEDED(hr))
+				break;
+
+			ULONG cFetched{};
+			for (CComHeapPtr<ITEMID_CHILD> pidlChild;
+				 S_OK == pEnumIdlist->Next(1, &pidlChild, &cFetched); pidlChild.Free())
+			{
+				const auto pidlAbsolute = ILCombine(pidlBin, pidlChild);
+
+				auto pidlSaved = ILFindLastID(reinterpret_cast<PCUIDLIST_RELATIVE>(pidl));
+				hr = psf->CompareIDs(SHCIDS_CANONICALONLY,
+					static_cast<PCUITEMID_CHILD>((ITEMID_CHILD *) pidlChild), pidlSaved);
+				const bool IsMatch = static_cast<short>(HRESULT_CODE(hr)) == 0;
+				if (IsMatch)
+					OutputDebugString(L"Matching!!!!\n");
+				else
+					OutputDebugString(L"Not matching :(\n");
+
+				CComHeapPtr<WCHAR> pszPidlParsing;
+				hr = SHGetNameFromIDList(pidl, SIGDN_DESKTOPABSOLUTEPARSING, &pszPidlParsing);
+				std::wstring ret{ pszPidlParsing };
+
+//				wchar_t ret[MAX_PATH];
+//				SHGetPathFromIDList(pidl, ret);
+				if (ret.empty())
+				{
+					OutputDebugString(L"ret is empty!\n");
+				}
+				else
+				{
+					OutputDebugString(L"display pidl:\n");
+					OutputDebugString(ret.c_str());
+					OutputDebugString(L"\n");
+				}
+
+				// Compare using IShellFolder for desktop
+				hr = pDesktop->CompareIDs(SHCIDS_CANONICALONLY, pidlAbsolute, pidl);
+				if (0 == static_cast<short>(HRESULT_CODE(hr)))
+					found = true;
+				CoTaskMemFree(pidlAbsolute);
+				if (found)
+					break;
+			}
+		} while (false);
+	}
+
+	CoUninitialize();
+
+	return found;
 }

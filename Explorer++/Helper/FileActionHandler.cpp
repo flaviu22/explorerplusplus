@@ -127,6 +127,14 @@ void FileActionHandler::UndoDeleteOperation(const DeletedItems_t &deletedItemLis
 	 - Find the item in the recycle bin (probably need to read INFO2 file).
 	 - Restore it (context menu command).
 	 - Push delete action onto stack. */
+
+	FileOperations::ListRecycleItems();
+	OutputDebugStringA("====== finding item ========\n");
+	for (const auto &item : deletedItemList)
+	{
+		const auto s = std::format("+++++++++++++++++{}\n", FileOperations::FindDeletedItem(item));
+		OutputDebugStringA(s.c_str());
+	}
 }
 
 BOOL FileActionHandler::CanUndo() const

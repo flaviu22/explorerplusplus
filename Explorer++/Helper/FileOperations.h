@@ -39,6 +39,8 @@ HRESULT ResolveLink(HWND hwnd, DWORD fFlags, const TCHAR *szLinkFilename, TCHAR 
 	int nBufferSize);
 
 BOOL CreateBrowseDialog(HWND hOwner, const std::wstring &strTitle, PIDLIST_ABSOLUTE *ppidl);
+void ListRecycleItems();
+bool FindDeletedItem(const PCIDLIST_ABSOLUTE &pidl);
 
 };
 
